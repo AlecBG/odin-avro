@@ -1,14 +1,14 @@
 package main
 
+import "core:encoding/endian"
 import "core:encoding/json"
 import "core:fmt"
-import "core:strings"
 
 HEADER_START := "Obj\x01"
 
 // todo: support more codecs
 SUPPORTED_CODEC :: enum {
-	Null
+	Null,
 }
 
 METADATA_KEY_AVRO_CODEC :: "avro.codec"
@@ -25,7 +25,7 @@ AvroMetadata :: struct {
 */
 main :: proc() {
 	// todo: make this stream the file
-	file_bytes := #load("../users.avro")
+	file_bytes := #load("../nested.avro")
 	byte_pos := 0
 	for byte_pos < 4 {
 		assert(file_bytes[byte_pos] == HEADER_START[byte_pos])
@@ -51,7 +51,7 @@ parse_data_block :: proc(bytes: []u8, start_pos: int, metadata: AvroMetadata) ->
 
 	block_bytes :[]u8
 	if metadata.codec != SUPPORTED_CODEC.Null {
-		compressed_block_bytes := bytes[pos: pos + byte_size]
+		// compressed_block_bytes := bytes[pos: pos + byte_size]
 		// Here is where we would do some decompression
 		assert(false)
 	} else {
@@ -66,7 +66,7 @@ parse_data_block :: proc(bytes: []u8, start_pos: int, metadata: AvroMetadata) ->
 		record_idx += 1
 	}
 
-	pos = pos + cast(int)byte_size
+	pos = pos + byte_size
 
 	for i in 0..<len(metadata.sync_marker) {
 		assert(bytes[pos + i] == metadata.sync_marker[i])
@@ -80,11 +80,26 @@ parse_avro_val :: proc(bytes: []u8, pos: int, schema: Schema) -> (AvroValue, int
 		case RecordSchema: {
 			return parse_record(bytes, pos, s)
 		}
+		case Boolean: {
+			return parse_avro_boolean(bytes, pos)
+		}
 		case String: {
 			return parse_avro_string(bytes, pos)
 		}
+		case Bytes: {
+			return parse_avro_bytes(bytes, pos)
+		}
 		case Int: {
 			return parse_avro_int(bytes, pos)
+		}
+		case Long: {
+			return parse_avro_long(bytes, pos)
+		}
+		case Float: {
+			return parse_avro_float(bytes, pos)
+		}
+		case Double: {
+			return parse_avro_double(bytes, pos)
 		}
 		case Null: {
 			return NULL_VALUE, pos
@@ -160,15 +175,35 @@ parse_avro_long :: proc(bytes: []u8, start_pos: int) -> (i64, int) {
 	return (devarred_int >> 1) ~ -(devarred_int & 1), pos
 }
 
+parse_avro_float :: proc(bytes: []u8, start_pos: int) -> (AvroFloat, int) {
+	val, ok := endian.get_f32(bytes[start_pos: start_pos + 4], .Little)
+	assert(ok)
+	return val, start_pos + 4
+}
+
+parse_avro_double :: proc(bytes: []u8, start_pos: int) -> (AvroDouble, int) {
+	val, ok := endian.get_f64(bytes[start_pos: start_pos + 8], .Little)
+	assert(ok)
+	return val, start_pos + 8
+}
+
 parse_avro_bytes :: proc(bytes: []u8, start_pos: int) -> ([]u8, int) {
-	length, pos := parse_avro_long(bytes, start_pos)
-	return bytes[pos: pos + cast(int)length], pos + cast(int)length
+	length_l, pos := parse_avro_long(bytes, start_pos)
+	length := cast(int)length_l
+	output := make([]u8, length)
+	for i in 0..<length {
+		output[i] = bytes[pos + i]
+	}
+	return output, pos + length
 }
 
 parse_avro_string :: proc(bytes: []u8, start_pos: int) -> (AvroString, int) {
 	bs, pos := parse_avro_bytes(bytes, start_pos)
-	s := strings.clone(transmute(string)bs)
-	return s, pos
+	return transmute(string)bs, pos
+}
+
+parse_avro_boolean :: proc(bytes: []u8, start_pos: int) -> (AvroBoolean, int) {
+	return bytes[start_pos] == 1, start_pos + 1
 }
 
 parse_avro_codec :: proc(codec_bytes: []u8) -> SUPPORTED_CODEC {
@@ -183,11 +218,10 @@ parse_avro_codec :: proc(codec_bytes: []u8) -> SUPPORTED_CODEC {
 
 parse_avro_file_metadata :: proc(bytes: []u8, start_pos: int) -> (AvroMetadata, int) {
 	num_entries, pos := parse_avro_long(bytes, start_pos)
-	file_metadata := make(map[string][]u8)
 	codec: SUPPORTED_CODEC
 	schema: json.Value
 	json_schema_err: json.Error
-	for i in 0..<num_entries {
+	for _ in 0..<num_entries {
 		key: string
 		key, pos = parse_avro_string(bytes, pos)
 		if key == METADATA_KEY_AVRO_CODEC {
@@ -198,6 +232,7 @@ parse_avro_file_metadata :: proc(bytes: []u8, start_pos: int) -> (AvroMetadata, 
 			schema_bytes: []u8
 			schema_bytes, pos = parse_avro_bytes(bytes, pos)
 			schema, json_schema_err = json.parse(schema_bytes)
+			fmt.println("schema json\n", schema)
 			if json_schema_err != nil {
 				// todo: bubble up errors
 				assert(false)
@@ -252,7 +287,17 @@ parse_with_string_type :: proc(t: string, object: json.Object) -> Schema {
 		return String{}
 	} else if t == "int" {
 		return Int{}
-	} else if t == "null" {
+	} else if t == "long" {
+	    return Long{}
+	} else if t == "float" {
+	    return Float{}
+	} else if t == "double" {
+	    return Double{}
+	} else if t == "boolean" {
+	    return Boolean{}
+	} else if t == "bytes" {
+	    return Bytes{}
+	}else if t == "null" {
 		return Null{}
 	} else {
 		assert(false)
@@ -269,9 +314,8 @@ parse_schema :: proc(json_schema: json.Value) -> Schema {
 			return parse_with_string_type(t, object)
 		}
 		case json.Array: {
-			type_arr := type.(json.Array)
-			schemas: []Schema = make([]Schema, len(type_arr))
-			for val, idx in type_arr {
+			schemas: []Schema = make([]Schema, len(t))
+			for val, idx in t {
 				val_str := val.(json.String)
 				if val_str == "string" {
 					schemas[idx] = String{}
@@ -284,6 +328,9 @@ parse_schema :: proc(json_schema: json.Value) -> Schema {
 				}
 			}
 			return UnionSchema{schemas}
+		}
+		case json.Object: {
+			return parse_schema(t)
 		}
 		case: {
 		  assert(false)

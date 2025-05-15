@@ -3,8 +3,13 @@ package main
 AvroValue :: union {
     Record,
     NullValue,
-    AvroString,
+    AvroBoolean,
     AvroInt,
+    AvroLong,
+    AvroFloat,
+    AvroDouble,
+    AvroString,
+    AvroBytes,
 }
 
 NullValue :: struct {
@@ -17,6 +22,16 @@ Record :: struct {
 	lookup: map[string]int,
 }
 
+AvroBoolean :: bool
+
 AvroString :: string
 
 AvroInt :: i32
+
+AvroLong :: i64
+
+AvroBytes :: []u8
+
+AvroFloat :: f32
+
+AvroDouble :: f64
