@@ -1,7 +1,8 @@
 package main
 
 AvroValue :: union {
-    Record,
+    AvroRecord,
+    AvroArray,
     NullValue,
     AvroBoolean,
     AvroInt,
@@ -17,14 +18,18 @@ NullValue :: struct {
 
 NULL_VALUE :: NullValue{}
 
-Record :: struct {
+AvroRecord :: struct {
 	values: []AvroValue,
 	lookup: map[string]int,
 }
 
+AvroArray :: [dynamic]AvroValue
+
 AvroBoolean :: bool
 
 AvroString :: string
+
+AvroEnum :: string
 
 AvroInt :: i32
 

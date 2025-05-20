@@ -3,6 +3,7 @@ package main
 import "core:encoding/endian"
 import "core:encoding/json"
 import "core:fmt"
+import "core:strings"
 
 HEADER_START := "Obj\x01"
 
@@ -33,7 +34,7 @@ main :: proc() {
 	}
 	metadata: AvroMetadata
 	metadata, byte_pos = parse_avro_file_metadata(file_bytes, byte_pos)
-	records: []Record
+	records: []AvroRecord
 
 	fmt.println(metadata)
 
@@ -42,9 +43,9 @@ main :: proc() {
 	fmt.println(records)
 }
 
-parse_data_block :: proc(bytes: []u8, start_pos: int, metadata: AvroMetadata) -> ([]Record, int) {
+parse_data_block :: proc(bytes: []u8, start_pos: int, metadata: AvroMetadata) -> ([]AvroRecord, int) {
 	number_records, pos := parse_avro_long(bytes, start_pos)
-	records := make([]Record, number_records)
+	records := make([]AvroRecord, number_records)
 	byte_size_l: i64
 	byte_size_l, pos = parse_avro_long(bytes, pos)
 	byte_size := cast(int)byte_size_l
@@ -77,9 +78,6 @@ parse_data_block :: proc(bytes: []u8, start_pos: int, metadata: AvroMetadata) ->
 
 parse_avro_val :: proc(bytes: []u8, pos: int, schema: Schema) -> (AvroValue, int) {
 	switch s in schema {
-		case RecordSchema: {
-			return parse_record(bytes, pos, s)
-		}
 		case Boolean: {
 			return parse_avro_boolean(bytes, pos)
 		}
@@ -108,6 +106,15 @@ parse_avro_val :: proc(bytes: []u8, pos: int, schema: Schema) -> (AvroValue, int
 			schema_idx, new_pos := parse_avro_int(bytes, pos)
 			return parse_avro_val(bytes, new_pos, s.schemas[schema_idx])
 		}
+		case RecordSchema: {
+			return parse_record(bytes, pos, s)
+		}
+		case ArraySchema: {
+			return parse_avro_array(bytes, pos, s)
+		}
+		case EnumSchema: {
+			return parse_avro_enum(bytes, pos, s)
+		}
 		case: {
 			assert(false)
 			return nil, pos
@@ -115,7 +122,7 @@ parse_avro_val :: proc(bytes: []u8, pos: int, schema: Schema) -> (AvroValue, int
 	}
 }
 
-parse_record :: proc(bytes: []u8, start_pos: int, schema: RecordSchema) -> (Record, int) {
+parse_record :: proc(bytes: []u8, start_pos: int, schema: RecordSchema) -> (AvroRecord, int) {
 	values: []AvroValue = make([]AvroValue, len(schema.fields))
 	lookup: map[string]int = make(map[string]int, len(schema.fields))
 	pos := start_pos
@@ -125,7 +132,39 @@ parse_record :: proc(bytes: []u8, start_pos: int, schema: RecordSchema) -> (Reco
 		val, pos = parse_avro_val(bytes, pos, record_field.schema)
 		values[idx] = val
 	}
-	return Record{values, lookup}, pos
+	return AvroRecord{values, lookup}, pos
+}
+
+parse_avro_array :: proc(bytes: []u8, start_pos: int, array_schema: ArraySchema) -> (AvroArray, int) {
+	values: [dynamic]AvroValue
+	total_length :int= 0
+
+	length, pos := parse_avro_long(bytes, start_pos)
+	// length 0 signifies end of blocks.
+	for length != 0 {
+		if length < 0 {
+			// See spec https://avro.apache.org/docs/1.11.1/specification/#complex-types-1
+			//  if length negative, next value is long signifying block byte length
+			length = -length
+			num_bytes: i64
+			num_bytes, pos = parse_avro_long(bytes, pos)
+		}
+		total_length += cast(int)length
+	
+		resize(&values, total_length)
+		for i in 0..<length {
+			val: AvroValue
+			val, pos = parse_avro_val(bytes, pos, array_schema.items_schema^)
+			append(&values, val)
+		}
+		length, pos = parse_avro_long(bytes, start_pos)
+	}
+	return values, pos
+}
+
+parse_avro_enum :: proc(bytes: []u8, start_pos: int, schema: EnumSchema) -> (AvroEnum, int) {
+	symbol_idx, pos := parse_avro_int(bytes, start_pos)
+	return strings.clone(schema.symbols[symbol_idx]), pos
 }
 
 read_sync_marker :: proc(bytes: []u8, start_pos: int) -> ([16]u8, int) {
@@ -232,7 +271,7 @@ parse_avro_file_metadata :: proc(bytes: []u8, start_pos: int) -> (AvroMetadata, 
 			schema_bytes: []u8
 			schema_bytes, pos = parse_avro_bytes(bytes, pos)
 			schema, json_schema_err = json.parse(schema_bytes)
-			fmt.println("schema json\n", schema)
+			fmt.println("schema json\n", schema, "\n")
 			if json_schema_err != nil {
 				// todo: bubble up errors
 				assert(false)
@@ -256,86 +295,5 @@ parse_avro_file_metadata :: proc(bytes: []u8, start_pos: int) -> (AvroMetadata, 
 	sync_marker: [16]u8
 	sync_marker, pos = read_sync_marker(bytes, pos)
 
-	return AvroMetadata{codec, parse_schema(schema), sync_marker}, pos
-}
-
-parse_with_string_type :: proc(t: string, object: json.Object) -> Schema {
-	if t == "record" {
-		fields_json, fields_present := object["fields"]
-		assert(fields_present)
-		fields_array := fields_json.(json.Array)
-		fields :[]RecordField = make([]RecordField, len(fields_array))
-		lookup :map[string]int = make(map[string]int, len(fields_array))
-		for i := 0; i < len(fields_array); i += 1 {
-			field_untyped := fields_array[i]
-			field_json_val := field_untyped.(json.Object)
-			field_name_untyped, name_present := field_json_val["name"]
-			assert(name_present)
-			field_name := field_name_untyped.(json.String)
-			fields[i] = RecordField {
-				field_name,
-				parse_schema(fields_array[i]),
-				i,
-			}
-			lookup[field_name] = i
-		}
-		return RecordSchema{
-			fields,
-			lookup,
-		}
-	} else if t == "string" {
-		return String{}
-	} else if t == "int" {
-		return Int{}
-	} else if t == "long" {
-	    return Long{}
-	} else if t == "float" {
-	    return Float{}
-	} else if t == "double" {
-	    return Double{}
-	} else if t == "boolean" {
-	    return Boolean{}
-	} else if t == "bytes" {
-	    return Bytes{}
-	}else if t == "null" {
-		return Null{}
-	} else {
-		assert(false)
-		return Null{}
-	}
-}
-
-parse_schema :: proc(json_schema: json.Value) -> Schema {
-	object := json_schema.(json.Object)
-	type, type_present := object["type"]
-	assert(type_present)
-	#partial switch t in type {
-		case json.String: {
-			return parse_with_string_type(t, object)
-		}
-		case json.Array: {
-			schemas: []Schema = make([]Schema, len(t))
-			for val, idx in t {
-				val_str := val.(json.String)
-				if val_str == "string" {
-					schemas[idx] = String{}
-				} else if val_str == "null" {
-					schemas[idx] = Null{}
-				} else if val_str == "int" {
-					schemas[idx] = Int{}
-				} else {
-					assert(false)
-				}
-			}
-			return UnionSchema{schemas}
-		}
-		case json.Object: {
-			return parse_schema(t)
-		}
-		case: {
-		  assert(false)
-		  return Null{}
-		}
-	}
-
+	return AvroMetadata{codec, parse_schema_from_json(schema), sync_marker}, pos
 }

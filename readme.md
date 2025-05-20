@@ -6,11 +6,17 @@ Very much a work in progress and I make no promises about finishing this.
 
 ## todo
 
-- [ ] Handle arrays
-- [x] Handle all primitive types
-- [ ] Handle maps
-- [x] Handle nested records
-- [ ] Handle logical types (such as all timestamps)
+- [ ] read avro object with complex types
+    - [ ] arrays
+    - [x] nested records
+    - [ ] maps
+    - [x] enums
+    - [ ] fixed
+    - [x] unions
+- [x] read avro object containing any primitive types
+- [ ] logical types (such as all timestamps)
+- [ ] aliases
+- [ ] default values
 - [ ] Add proper error handling
 - [ ] Stream the file instead of reading all at once to allow reading very large files
 - [ ] Write out a proper test suite

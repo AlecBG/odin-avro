@@ -18,6 +18,31 @@ Double :: struct{}
 
 Null :: struct {}
 
+RecordSchema :: struct {
+    fields: []RecordField,
+    // map field name to position in vec
+    lookup: map[string]int,
+}
+
+RecordField :: struct {
+    name: string,
+    schema: Schema,
+    position: int,
+}
+
+ArraySchema :: struct {
+    items_schema: ^Schema,
+}
+
+UnionSchema :: struct {
+    schemas: []Schema,
+}
+
+EnumSchema :: struct {
+    name: string,
+    symbols: []string,
+}
+
 Schema :: union {
     // type 'boolean'
     Boolean,
@@ -33,25 +58,14 @@ Schema :: union {
     Float,
     // type 'double'
     Double,
+    // type 'null'
+    Null,
+    // type 'array'
+    ArraySchema,
+    // type 'enum'
+    EnumSchema,
     // type 'record'
     RecordSchema,
     // type 'union'
     UnionSchema,
-    Null,
-}
-
-RecordSchema :: struct {
-    fields: []RecordField,
-    // map field name to position in vec
-    lookup: map[string]int,
-}
-
-RecordField :: struct {
-    name: string,
-    schema: Schema,
-    position: int,
-}
-
-UnionSchema :: struct {
-    schemas: []Schema,
 }
