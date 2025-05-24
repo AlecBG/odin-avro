@@ -1,4 +1,4 @@
-package main
+package avro
 
 
 // This is missing a lot of the functionality of avro schemas.

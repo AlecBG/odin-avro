@@ -1,4 +1,4 @@
-package main
+package avro
 
 AvroValue :: union {
     AvroRecord,

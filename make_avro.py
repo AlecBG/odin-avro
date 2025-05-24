@@ -29,6 +29,13 @@ nested_schema = avro.schema.make_avsc_object(
                 },
             },
             {
+                "name": "arr",
+                "type": {
+                    "type": "array",
+                    "items": "string"
+                }
+            },
+            {
                 "name": "nested",
                 "type": {
                     "type": "record",
@@ -65,6 +72,7 @@ writer.append(
     {
         "my-string": "Alyssa",
         "e": "all",
+        "arr": ["a", "b"],
         "nested": {
             "nested-int": 256,
             "nested-string": "a value",
@@ -80,6 +88,7 @@ writer.append(
     {
         "my-string": "Benjamin",
         "e": "i",
+        "arr": ["c", "d"],
         "nested": {
             "nested-int": 124,
             "nested-string": "a different value",
@@ -95,6 +104,7 @@ writer.append(
     {
         "my-string": "Caravaggio",
         "e": "wanted",
+        "arr": ["array", "of", "strings"],
         "nested": {
             "nested-int": 69,
             "nested-string": "#œœ≈kmqmo^µ∑≈œ≈µ\x07",

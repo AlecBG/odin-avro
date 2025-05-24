@@ -7,7 +7,7 @@ Very much a work in progress and I make no promises about finishing this.
 ## todo
 
 - [ ] read avro object with complex types
-    - [ ] arrays
+    - [x] arrays
     - [x] nested records
     - [ ] maps
     - [x] enums

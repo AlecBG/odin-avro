@@ -1,4 +1,4 @@
-package main
+package avro
 
 import "core:encoding/endian"
 import "core:encoding/json"
@@ -72,8 +72,9 @@ parse_schema_from_json_object :: proc(json_object: json.Object) -> Schema {
             } else if type == "array" {
                 items_json, items_present := json_object["items"]
                 assert(items_present)
-                items_schema := parse_schema_from_json(items_json)
-                return ArraySchema{ &items_schema }
+                items_schema := new(Schema)
+                items_schema^ = parse_schema_from_json(items_json)
+                return ArraySchema{ items_schema }
             } else {
                 return parse_schema_from_json_string(type)
             }
