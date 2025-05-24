@@ -1,40 +1,7 @@
 package avro
 
 import "core:encoding/endian"
-import "core:encoding/json"
 import "core:strings"
-
-parse_data_block :: proc(bytes: []u8, start_pos: int, metadata: AvroMetadata) -> ([]AvroRecord, int) {
-	number_records, pos := parse_avro_long(bytes, start_pos)
-	records := make([]AvroRecord, number_records)
-	byte_size_l: i64
-	byte_size_l, pos = parse_avro_long(bytes, pos)
-	byte_size := cast(int)byte_size_l
-
-	block_bytes :[]u8
-	if metadata.codec != SUPPORTED_CODEC.Null {
-		// compressed_block_bytes := bytes[pos: pos + byte_size]
-		// Here is where we would do some decompression
-		assert(false)
-	} else {
-		block_bytes = bytes[pos: pos + byte_size]
-	}
-
-	block_pos := 0
-	record_idx := 0
-	for block_pos < byte_size {
-		records[record_idx], block_pos = parse_record(block_bytes, block_pos, metadata.schema.(RecordSchema))
-		record_idx += 1
-	}
-
-	pos = pos + byte_size
-
-	for i in 0..<len(metadata.sync_marker) {
-		assert(bytes[pos + i] == metadata.sync_marker[i])
-	}
-
-	return records, pos + 16
-}
 
 parse_avro_val :: proc(bytes: []u8, pos: int, schema: ^Schema) -> (AvroValue, int) {
 	switch s in schema {
@@ -111,7 +78,7 @@ parse_avro_array :: proc(bytes: []u8, start_pos: int, array_schema: ArraySchema)
 		}
 		total_length += cast(int)length
 	
-		for i in 0..<length {
+		for _ in 0..<length {
 			val: AvroValue
 			val, pos = parse_avro_val(bytes, pos, array_schema.items_schema)
 			append(&values, val)
@@ -124,14 +91,6 @@ parse_avro_array :: proc(bytes: []u8, start_pos: int, array_schema: ArraySchema)
 parse_avro_enum :: proc(bytes: []u8, start_pos: int, schema: EnumSchema) -> (AvroEnum, int) {
 	symbol_idx, pos := parse_avro_int(bytes, start_pos)
 	return strings.clone(schema.symbols[symbol_idx]), pos
-}
-
-read_sync_marker :: proc(bytes: []u8, start_pos: int) -> ([16]u8, int) {
-	sync_marker: [16]u8
-	for i in 0..<16 {
-	    sync_marker[i] = bytes[start_pos + i]
-	}
-	return sync_marker, start_pos + 16
 }
 
 devar_long :: proc(bytes: []u8, start_pos: int) -> ([8]u8, int) {
@@ -202,62 +161,4 @@ parse_avro_string :: proc(bytes: []u8, start_pos: int) -> (AvroString, int) {
 
 parse_avro_boolean :: proc(bytes: []u8, start_pos: int) -> (AvroBoolean, int) {
 	return bytes[start_pos] == 1, start_pos + 1
-}
-
-parse_avro_codec :: proc(codec_bytes: []u8) -> SUPPORTED_CODEC {
-	if transmute(string)codec_bytes == "null"  {
-		return SUPPORTED_CODEC.Null
-	} else {
-		// todo: improve error handling!
-		assert(false)
-		return SUPPORTED_CODEC.Null
-	}
-}
-
-parse_avro_file_metadata :: proc(bytes: []u8, start_pos: int) -> (AvroMetadata, int) {
-	num_entries, pos := parse_avro_long(bytes, start_pos)
-	codec: SUPPORTED_CODEC
-	schema: json.Value
-	json_schema_err: json.Error
-	for _ in 0..<num_entries {
-		key: string
-		key, pos = parse_avro_string(bytes, pos)
-		defer delete(key)
-		if key == METADATA_KEY_AVRO_CODEC {
-			bs: []u8
-			bs, pos = parse_avro_bytes(bytes, pos)
-			codec = parse_avro_codec(bs)
-			delete(bs)
-		} else if key == METADATA_KEY_AVRO_SCHEMA {
-			schema_bytes: []u8
-			schema_bytes, pos = parse_avro_bytes(bytes, pos)
-			schema, json_schema_err = json.parse(schema_bytes)
-			delete(schema_bytes)
-			if json_schema_err != nil {
-				// todo: bubble up errors
-				assert(false)
-			}
-		}
-	}
-
-	if codec != SUPPORTED_CODEC.Null {
-		// todo: bubble up errors
-		assert(false)
-	}
-	if schema == nil {
-		// todo: bubble up errors
-		assert(false)
-	}
-
-	end_of_map: i64
-	end_of_map, pos = parse_avro_long(bytes, pos)
-	assert(end_of_map == 0)
-
-	sync_marker: [16]u8
-	sync_marker, pos = read_sync_marker(bytes, pos)
-
-	avro_schema := parse_schema_from_json(schema)
-	json.destroy_value(schema)
-
-	return AvroMetadata{codec, avro_schema, sync_marker}, pos
 }

@@ -1,8 +1,6 @@
 package avro
 
-import "core:encoding/endian"
 import "core:encoding/json"
-import "core:fmt"
 import "core:strings"
 
 parse_schema_from_json :: proc(json_schema: json.Value) -> Schema {
@@ -15,7 +13,7 @@ parse_schema_from_json :: proc(json_schema: json.Value) -> Schema {
 			schemas: []^Schema = make([]^Schema, len(t))
 			for val, idx in t {
 				schemas[idx] = new(Schema)
-                schemas[idx]^ = parse_schema_from_json(t[idx])
+                schemas[idx]^ = parse_schema_from_json(val)
 			}
 			return UnionSchema{schemas}
 		}

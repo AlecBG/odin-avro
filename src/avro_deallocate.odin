@@ -28,8 +28,8 @@ destroy_schema :: proc(schema: ^Schema) {
             delete(s.lookup)
         }
         case UnionSchema: {
-            for schema in s.schemas {
-                destroy_schema(schema)
+            for schema_in_union in s.schemas {
+                destroy_schema(schema_in_union)
             }
             delete(s.schemas)
         }

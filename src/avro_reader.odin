@@ -1,11 +1,7 @@
 package avro
 
-import "core:encoding/endian"
-import "core:encoding/json"
 import "core:fmt"
-import "core:mem"
 import "core:os"
-import "core:strings"
 
 HEADER_START := "Obj\x01"
 
@@ -34,26 +30,19 @@ main :: proc() {
 	}
 	defer delete(file_bytes, context.allocator)
 
-	byte_pos := 0
-	for byte_pos < 4 {
-		assert(file_bytes[byte_pos] == HEADER_START[byte_pos])
-		byte_pos += 1
+	object_container := read_object_container_file(file_bytes)
+
+	fmt.println("Schema\n", object_container.metadata.schema, "\n=====================\nRecords", sep="")
+	
+	for record in object_container.records {
+		fmt.println(record)
 	}
-	metadata: AvroMetadata
-	metadata, byte_pos = parse_avro_file_metadata(file_bytes, byte_pos)
-	records: []AvroRecord
 
-	fmt.println(metadata)
+	destroy_schema(&object_container.metadata.schema)
 
-	records, byte_pos = parse_data_block(file_bytes, byte_pos, metadata)
-
-	fmt.println(records)
-
-	destroy_schema(&metadata.schema)
-
-	for &record in records {
+	for &record in object_container.records {
 		destroy_record(&record)
 	}
-	delete(records)
+	delete(object_container.records)
 
 }
