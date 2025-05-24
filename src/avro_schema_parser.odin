@@ -12,9 +12,10 @@ parse_schema_from_json :: proc(json_schema: json.Value) -> Schema {
 		}
 		case json.Array: {
             // union type
-			schemas: []Schema = make([]Schema, len(t))
+			schemas: []^Schema = make([]^Schema, len(t))
 			for val, idx in t {
-				schemas[idx] = parse_schema_from_json(t[idx])
+				schemas[idx] = new(Schema)
+                schemas[idx]^ = parse_schema_from_json(t[idx])
 			}
 			return UnionSchema{schemas}
 		}
@@ -45,10 +46,12 @@ parse_schema_from_json_object :: proc(json_object: json.Object) -> Schema {
                     field_json_val := field_untyped.(json.Object)
                     field_name_untyped, name_present := field_json_val["name"]
                     assert(name_present)
-                    field_name := field_name_untyped.(json.String)
+                    field_name := strings.clone(field_name_untyped.(json.String))
+                    field_schema := new(Schema)
+                    field_schema^ = parse_schema_from_json(fields_array[i])
                     fields[i] = RecordField {
                         field_name,
-                        parse_schema_from_json(fields_array[i]),
+                        field_schema,
                         i,
                     }
                     lookup[field_name] = i
@@ -66,7 +69,7 @@ parse_schema_from_json_object :: proc(json_object: json.Object) -> Schema {
                 symbols_array := symbols_json.(json.Array)
                 symbols := make([]string, len(symbols_array))
                 for i in 0..<len(symbols_array) {
-                    symbols[i] = symbols_array[i].(string)
+                    symbols[i] = strings.clone(symbols_array[i].(string))
                 }
                 return EnumSchema{ name, symbols }
             } else if type == "array" {

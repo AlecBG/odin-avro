@@ -26,7 +26,7 @@ RecordSchema :: struct {
 
 RecordField :: struct {
     name: string,
-    schema: Schema,
+    schema: ^Schema,
     position: int,
 }
 
@@ -35,7 +35,7 @@ ArraySchema :: struct {
 }
 
 UnionSchema :: struct {
-    schemas: []Schema,
+    schemas: []^Schema,
 }
 
 EnumSchema :: struct {

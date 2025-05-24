@@ -2,7 +2,6 @@ package avro
 
 import "core:encoding/endian"
 import "core:encoding/json"
-import "core:fmt"
 import "core:strings"
 
 parse_data_block :: proc(bytes: []u8, start_pos: int, metadata: AvroMetadata) -> ([]AvroRecord, int) {
@@ -25,7 +24,6 @@ parse_data_block :: proc(bytes: []u8, start_pos: int, metadata: AvroMetadata) ->
 	record_idx := 0
 	for block_pos < byte_size {
 		records[record_idx], block_pos = parse_record(block_bytes, block_pos, metadata.schema.(RecordSchema))
-		fmt.println("Parsed record ", record_idx, " val: ", records[record_idx])
 		record_idx += 1
 	}
 
@@ -38,7 +36,7 @@ parse_data_block :: proc(bytes: []u8, start_pos: int, metadata: AvroMetadata) ->
 	return records, pos + 16
 }
 
-parse_avro_val :: proc(bytes: []u8, pos: int, schema: Schema) -> (AvroValue, int) {
+parse_avro_val :: proc(bytes: []u8, pos: int, schema: ^Schema) -> (AvroValue, int) {
 	switch s in schema {
 		case Boolean: {
 			return parse_avro_boolean(bytes, pos)
@@ -115,7 +113,7 @@ parse_avro_array :: proc(bytes: []u8, start_pos: int, array_schema: ArraySchema)
 	
 		for i in 0..<length {
 			val: AvroValue
-			val, pos = parse_avro_val(bytes, pos, array_schema.items_schema^)
+			val, pos = parse_avro_val(bytes, pos, array_schema.items_schema)
 			append(&values, val)
 		}
 		length, pos = parse_avro_long(bytes, pos)
@@ -224,14 +222,17 @@ parse_avro_file_metadata :: proc(bytes: []u8, start_pos: int) -> (AvroMetadata, 
 	for _ in 0..<num_entries {
 		key: string
 		key, pos = parse_avro_string(bytes, pos)
+		defer delete(key)
 		if key == METADATA_KEY_AVRO_CODEC {
 			bs: []u8
 			bs, pos = parse_avro_bytes(bytes, pos)
 			codec = parse_avro_codec(bs)
+			delete(bs)
 		} else if key == METADATA_KEY_AVRO_SCHEMA {
 			schema_bytes: []u8
 			schema_bytes, pos = parse_avro_bytes(bytes, pos)
 			schema, json_schema_err = json.parse(schema_bytes)
+			delete(schema_bytes)
 			if json_schema_err != nil {
 				// todo: bubble up errors
 				assert(false)
@@ -255,5 +256,8 @@ parse_avro_file_metadata :: proc(bytes: []u8, start_pos: int) -> (AvroMetadata, 
 	sync_marker: [16]u8
 	sync_marker, pos = read_sync_marker(bytes, pos)
 
-	return AvroMetadata{codec, parse_schema_from_json(schema), sync_marker}, pos
+	avro_schema := parse_schema_from_json(schema)
+	json.destroy_value(schema)
+
+	return AvroMetadata{codec, avro_schema, sync_marker}, pos
 }
